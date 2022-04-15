@@ -1,0 +1,283 @@
+package HealthBar
+
+import FramehandleNames
+import LinkedList
+import TimerUtils
+import Textures
+import ClosureTimers
+import Execute
+
+// Once you imported this files, you should set their roots
+@configurable constant EMPTY_BACKGROUND_ROOT                = "EmptyBTN.blp"
+@configurable constant TEMPLATES_ROOT                       = "Templates.toc"
+
+// Configure this values to your taste
+@configurable constant DEFAULT_ENABLE_ANIMATION             = true
+@configurable constant DEFAULT_FRAME_POINT                  = FRAMEPOINT_CENTER
+@configurable constant DEFAULT_SIZE                         = vec2(0.1, 0.03)
+@configurable constant DEFAULT_SCALE                        = 1.
+@configurable constant DEFAULT_POSITION                     = SCREEN_CENTER
+@configurable constant DEFAULT_TEXT                         = "Health: "
+@configurable constant DEFAULT_TEXT_VERTICAL_ALIGNMENT      = TEXT_JUSTIFY_CENTER
+@configurable constant DEFAULT_TEXT_HORIZONTAL_ALIGNMENT    = TEXT_JUSTIFY_LEFT
+@configurable constant DEFAULT_BACKGROUND_TEMPLATE          = "EscMenuControlBackdropTemplate"
+@configurable constant DEFAULT_PROGRESS_BAR_TEXTURE         = Textures.human_bigbar_fill
+@configurable constant DEFAULT_PROGRESS_BAR_COLOR           = colorA(0, 0, 255, 255)
+@configurable constant DEFAULT_PROGRESS_BAR_HEAL_COLOR      = colorA(0, 255, 0, 255)
+@configurable constant DEFAULT_PROGRESS_BAR_DAMAGE_COLOR    = colorA(255, 0, 0, 255)
+@configurable constant DEFAULT_INITIAL_LIFE                 = 1.
+@configurable constant DEFAULT_MAX_LIFE                     = 1.
+@configurable constant UPDATE_INTERVAL                      = 0.03125
+
+// What happened with this functions?
+
+public function color.toInt() returns int
+    return BlzConvertColor(255, this.red, this.green, this.blue)
+
+public function colorA.toInt() returns int
+    return BlzConvertColor(this.alpha, this.red, this.green, this.blue)
+
+public class HealthBar
+
+    private static LinkedList<HealthBar> instances = new LinkedList<HealthBar>()
+    private static timer clock = getTimer()
+
+    // Fields of the all the set
+    private framehandle main
+    private framehandle bar
+    private framehandle background
+    private framehandle progressBar
+    private framehandle healthText
+    private framehandle nameText
+    private textaligntype vertAlign = DEFAULT_TEXT_VERTICAL_ALIGNMENT
+    private textaligntype horzAlign = DEFAULT_TEXT_HORIZONTAL_ALIGNMENT
+    private framepointtype anchor   = DEFAULT_FRAME_POINT
+
+    private string text             = DEFAULT_TEXT
+    private bool animationEnabled   = DEFAULT_ENABLE_ANIMATION
+    private colorA barColor         = DEFAULT_PROGRESS_BAR_COLOR
+    private colorA healColor        = DEFAULT_PROGRESS_BAR_HEAL_COLOR
+    private colorA dmgColor         = DEFAULT_PROGRESS_BAR_DAMAGE_COLOR
+    private int precision           = 0
+    private real currentHealth      = DEFAULT_INITIAL_LIFE
+    private real maxHealth          = DEFAULT_MAX_LIFE
+    private vec2 pos                = DEFAULT_POSITION
+    private vec2 size               = DEFAULT_SIZE
+    private real scale              = DEFAULT_SCALE
+    private string barTexture       = DEFAULT_PROGRESS_BAR_TEXTURE
+    private unit myUnit             = null // It would be a widget if I could get the max HP
+    private framehandle healBar
+    private framehandle dmgBar
+    private real lastHealthRatio    = currentHealth/maxHealth
+    private CallbackPeriodic lastCallback = null
+
+    /** Creates the health-bar and to display it use the function .build()
+        but before you can edit the fields */
+    construct()
+        let id = this castTo int
+        main = createFrame(FramehandleTypeNames.backdrop, "Health Bar", WORLD_UI, "", id)
+
+        // Create the bar
+        bar = createFrame(FramehandleTypeNames.backdrop, "Bar", main, "", id)
+        background = createFrame(FramehandleTypeNames.backdrop, "Background", bar, DEFAULT_BACKGROUND_TEMPLATE, id)
+        progressBar = createFrame("SIMPLESTATUSBAR", "Progress bar", bar, "", id)
+        healthText = createFrame(FramehandleTypeNames.text, "Health text", bar, "", id)
+        healBar = createFrame("SIMPLESTATUSBAR", "Heal bar animation", bar, "", id)
+        dmgBar = createFrame("SIMPLESTATUSBAR", "Damage bar animation", bar, "", id)
+
+        // Create the name text
+        nameText = createFrame(FramehandleTypeNames.text, "Name text", main, "", id)
+
+        // Order the frames
+        main.setLevel(1)
+
+        bar.setLevel(1)
+        nameText.setLevel(2)
+
+        background.setLevel(1)
+        healBar.setLevel(2)
+        dmgBar.setLevel(3)
+        progressBar.setLevel(4)
+        healthText.setLevel(10)
+    
+    /** If all the fields are set this functions creates the health-bar*/
+    function build()
+        main.setAbsPoint(anchor, pos)
+        main.setSize(size.x, size.y)
+        main.setScale(scale)
+        main.setTexture(EMPTY_BACKGROUND_ROOT, 0, true)
+        if myUnit != null
+            currentHealth = myUnit.getHP()
+            maxHealth = myUnit.getMaxHP()
+
+        // Build the progress bar
+        bar.setPoint(FRAMEPOINT_TOPLEFT, main, FRAMEPOINT_TOP, -0.012, 0.)
+        bar.setPoint(FRAMEPOINT_BOTTOMRIGHT, main, FRAMEPOINT_BOTTOMRIGHT)
+        bar.setTexture(EMPTY_BACKGROUND_ROOT, 0, true)
+
+        healthText.setText(currentHealth.toString(precision) + " / " + maxHealth.toString(precision))
+        healthText.setPoint(FRAMEPOINT_TOPLEFT, bar, FRAMEPOINT_TOPLEFT)
+        healthText.setPoint(FRAMEPOINT_BOTTOMRIGHT, bar, FRAMEPOINT_BOTTOMRIGHT)
+        healthText.setTextAlignment(TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_CENTER)
+
+        background.setPoint(FRAMEPOINT_TOPLEFT, bar, FRAMEPOINT_TOPLEFT)
+        background.setPoint(FRAMEPOINT_BOTTOMRIGHT, bar, FRAMEPOINT_BOTTOMRIGHT)
+
+        progressBar.setTexture(barTexture, 0, true)
+        progressBar.setVertexColor(barColor.toInt())
+        progressBar.setValue(currentHealth/maxHealth * 100.)
+        progressBar.setPoint(FRAMEPOINT_TOPLEFT, background, FRAMEPOINT_TOPLEFT, 0.006, -0.006)
+        progressBar.setPoint(FRAMEPOINT_BOTTOMRIGHT, background, FRAMEPOINT_BOTTOMRIGHT, -0.006, 0.006)
+
+        healBar.setTexture(barTexture, 0, true)
+        healBar.setVertexColor(healColor.toInt())
+        healBar.setPoint(FRAMEPOINT_TOPLEFT, background, FRAMEPOINT_TOPLEFT, 0.006, -0.006)
+        healBar.setPoint(FRAMEPOINT_BOTTOMRIGHT, background, FRAMEPOINT_BOTTOMRIGHT, -0.006, 0.006)
+        dmgBar.setTexture(barTexture, 0, true)
+        dmgBar.setVertexColor(dmgColor.toInt())
+        dmgBar.setPoint(FRAMEPOINT_TOPLEFT, background, FRAMEPOINT_TOPLEFT, 0.006, -0.006)
+        dmgBar.setPoint(FRAMEPOINT_BOTTOMRIGHT, background, FRAMEPOINT_BOTTOMRIGHT, -0.006, 0.006)
+        
+        // Build the name text
+        nameText.setText(text)
+        nameText.setPoint(FRAMEPOINT_TOPLEFT, main, FRAMEPOINT_TOPLEFT)
+        nameText.setPoint(FRAMEPOINT_BOTTOMRIGHT, main, FRAMEPOINT_BOTTOM)
+        nameText.setTextAlignment(vertAlign, horzAlign)
+
+    /** Update the health bar based in the health of the unit */
+    private function updateNS()
+        maxHealth = myUnit.getMaxHP()
+        setHealth(myUnit.getHP())
+
+    private static function update()
+        for ins in instances
+            ins.updateNS()
+
+    /** Returns the parent framehandle of all the health-bar. */
+    function getMain() returns framehandle
+        return main
+
+    function setPos(vec2 pos)
+        this.pos = pos
+        main.setAbsPoint(anchor, pos)
+    
+    function getPos() returns vec2
+        return pos
+
+    function setSize(vec2 size)
+        this.size = size
+        main.setSize(size.x, size.y)
+
+    function setSize(real width, real height)
+        this.size = vec2(width, height)
+        main.setSize(width, height)
+    
+    function getSize() returns vec2
+        return size
+
+    function setScale(real scale)
+        this.scale = scale
+        main.setScale(scale)
+
+    function getScale() returns real
+        return scale
+    
+    /** Hooks the health bar to the unit and automatically updates
+        based in its health. 
+        To clear, set this value to null. */
+    function setUnit(unit myUnit)
+        this.myUnit = myUnit
+        if myUnit != null
+            currentHealth = myUnit.getHP()
+            maxHealth = myUnit.getMaxHP()
+            if instances.isEmpty()
+                clock.startPeriodic(UPDATE_INTERVAL, function update)
+            instances.add(this)
+        else
+            currentHealth = DEFAULT_INITIAL_LIFE
+            maxHealth = DEFAULT_MAX_LIFE
+            instances.remove(this)
+            if instances.isEmpty()
+                clock.pause()
+    
+    function getUnit() returns unit
+        return myUnit
+
+    function setHealth(real health)
+        this.currentHealth = health
+
+        let ratio = currentHealth/maxHealth
+
+        if animationEnabled
+            // Play the animation in case the current health value was changed
+            if ratio != lastHealthRatio
+                let diff = ratio - lastHealthRatio
+                let stop = ratio * 100.
+                try(() -> destroy lastCallback)
+                var value = lastHealthRatio * 100.
+                if diff > 0. // Healed
+                    healBar.setValue(ratio * 100.)
+                    dmgBar.setValue(0.)
+                    lastCallback = doPeriodically(UPDATE_INTERVAL, cb -> begin
+                        value += 1.
+                        progressBar.setValue(value)
+                        if value >= stop
+                            destroy cb
+                            healBar.setValue(0.)
+                    end)
+                else // Damaged
+                    dmgBar.setValue(value)
+                    healBar.setValue(0.)
+                    progressBar.setValue(ratio * 100.)
+                    lastCallback = doPeriodically(UPDATE_INTERVAL, cb -> begin
+                        value -= 1.
+                        dmgBar.setValue(value)
+                        if value <= stop
+                            destroy cb
+                            dmgBar.setValue(0.)
+                    end)
+        else
+            // If the animation is disabled just move the progress bar instantly
+            progressBar.setValue(ratio * 100.)
+        
+        lastHealthRatio = ratio
+        
+        healthText.setText(currentHealth.toString(precision) + " / " + maxHealth.toString(precision))
+    
+    function getHealth() returns real
+        return currentHealth
+
+    function setMaxHealth(real health)
+        maxHealth = health
+        healthText.setText(currentHealth.toString(precision) + " / " + maxHealth.toString(precision))
+    
+    function getMaxHealth() returns real
+        return maxHealth
+
+    function enableAnimation()
+        animationEnabled = true
+
+    function disbleAnimation()
+        animationEnabled = false
+
+    /** Sets the reference point of the entire health bar. */
+    function setAnchor(framepointtype anchor)
+        this.anchor = anchor
+        main.clearAllPoints()
+        main.setAbsPoint(anchor, pos)
+    
+    function getAnchor() returns framepointtype
+        return anchor
+    
+    ondestroy
+        if myUnit != null
+            instances.remove(this)
+            if instances.isEmpty()
+                clock.pause()
+            myUnit = null
+        bar.remove()
+        
+
+init
+    // You should have this file in the imports directory
+    BlzLoadTOCFile(TEMPLATES_ROOT)

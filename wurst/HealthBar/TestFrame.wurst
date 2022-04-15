@@ -1,0 +1,19 @@
+package TestFrame
+
+import ClosureTimers
+import HealthBar
+
+init
+    nullTimer() ->
+        let bar = new HealthBar()
+
+        bar.build()
+
+        bar.setMaxHealth(100.)
+        bar.disbleAnimation()
+        bar.setHealth(50.)
+        bar.enableAnimation()
+        doAfter(2.) -> 
+            bar.setHealth(75.)
+            doAfter(2.) -> 
+                bar.setHealth(50.)
