@@ -153,6 +153,14 @@ public class HealthBar
         for ins in instances
             ins.updateNS()
 
+    private function updateText()
+        var currentHealthStr = currentHealth.toString(precision)
+        var maxHealthStr = maxHealth.toString(precision)
+        if precision == 0
+            currentHealthStr = currentHealthStr.substring(0, currentHealthStr.length() - 2)
+            maxHealthStr = maxHealthStr.substring(0, maxHealthStr.length() - 2)
+        healthText.setText(currentHealthStr + " / " + maxHealthStr)
+
     /** Returns the parent framehandle of all the health-bar. */
     function getMain() returns framehandle
         return main
@@ -242,14 +250,14 @@ public class HealthBar
         
         lastHealthRatio = ratio
         
-        healthText.setText(currentHealth.toString(precision) + " / " + maxHealth.toString(precision))
+        updateText()
     
     function getHealth() returns real
         return currentHealth
 
     function setMaxHealth(real health)
         maxHealth = health
-        healthText.setText(currentHealth.toString(precision) + " / " + maxHealth.toString(precision))
+        updateText()
     
     function getMaxHealth() returns real
         return maxHealth
@@ -268,6 +276,15 @@ public class HealthBar
     
     function getAnchor() returns framepointtype
         return anchor
+
+    /** Sets the number of decimals will show the health
+        (precision 0 will truncate the decimals)*/
+    function setPrecision(int precision)
+        this.precision = precision
+        updateText()
+    
+    function getPrecision() returns int
+        return precision
     
     ondestroy
         if myUnit != null

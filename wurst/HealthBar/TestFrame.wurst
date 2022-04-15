@@ -14,6 +14,9 @@ init
         bar.setHealth(50.)
         bar.enableAnimation()
         doAfter(2.) -> 
-            bar.setHealth(75.)
-            doAfter(2.) -> 
-                bar.setHealth(50.)
+            doAfter(0.5) -> 
+                bar.setHealth(75.)
+                doAfter(0.5) -> 
+                    bar.setHealth(50.)
+                    doAfter(0.5) -> 
+                        bar.setHealth(25.)
